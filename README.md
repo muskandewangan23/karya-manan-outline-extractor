@@ -1,36 +1,46 @@
-# Karya-Manan Hackathon Submission
+# 🧠 PDF Outline Extractor — Karya-Manan Team
 
-## 🔍 Problem Statement
-Extract the hierarchical outline (Title, H1, H2, H3 with page numbers) from a PDF document and output a valid JSON structure. This solution is optimized for CPU-only, offline execution under 10 seconds for 50-page PDFs.
-
----
-
-## 🛠️ Tech Stack
-- Language: Python 3.10
-- Libraries: 
-  - [PyMuPDF (fitz)](https://pymupdf.readthedocs.io/en/latest/)
-- Platform: Docker (CPU, AMD64)
-- Deployment: Colab + Docker-ready
-- Input: PDF files
-- Output: Structured JSON outline
+This project extracts a structured outline from a PDF, including:
+- 📘 **Title**
+- 🧩 **Headings**: H1, H2, and H3 (with levels and page numbers)
 
 ---
 
-## 🚀 How It Works
+## 🚀 Problem Statement: "Understand Your Document"
+PDFs are rich in content but poor in structure. Our goal is to convert unstructured PDFs into structured outlines — enabling smarter search, indexing, and navigation.
 
-1. All PDF files in `/app/input` are automatically processed.
-2. Each file is analyzed for:
-   - Title (based on the largest font or first prominent heading)
-   - Headings (`H1`, `H2`, `H3`) based on font size and boldness
-3. Output JSON files are saved with the same name in `/app/output`.
+---
 
-Example Output Format:
-```json
-{
-  "title": "Understanding AI",
-  "outline": [
-    { "level": "H1", "text": "Introduction", "page": 1 },
-    { "level": "H2", "text": "What is AI?", "page": 2 },
-    { "level": "H3", "text": "History of AI", "page": 3 }
-  ]
-}
+## 🛠️ Our Approach
+
+1. **PDF Parsing with PyMuPDF (fitz)**  
+   Efficient, fast, and CPU-friendly — it lets us extract fonts, sizes, positions, and text in <10s even for large PDFs.
+
+2. **Heading Detection Strategy**
+   - We analyze **font size**, **boldness**, and **patterns**
+   - Top N frequent font sizes are mapped to heading levels (H1 > H2 > H3)
+   - Content is filtered based on structural heuristics
+
+3. **Title Detection**
+   - Title is usually the largest-sized text on the first few pages.
+   - If ambiguous, we fallback to "Untitled" and let users rename it.
+
+4. **Output**
+   - A clean JSON matching the format:
+   ```json
+   {
+     "title": "Sample Title",
+     "outline": [
+       { "level": "H1", "text": "Chapter 1", "page": 2 },
+       ...
+     ]
+   }
+
+```bash
+docker build --platform linux/amd64 -t karya-manan-solution:abc123xyz .
+
+docker run --rm \
+  -v $(pwd)/input:/app/input \
+  -v $(pwd)/output:/app/output \
+  --network none \
+  karya-manan-solution:abc123xyz
