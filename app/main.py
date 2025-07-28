@@ -97,8 +97,7 @@ def generate_outline_json(pdf_path, output_path):
 # ---------- Step 6: Run Locally or in Colab ----------
 
 if __name__ == "__main__":
-    # Example usage — replace with any PDF path
-    test_pdf = "input"  # Replace with uploaded file path
-    output_json = "output"
+    test_pdf = "./input/sample.pdf"  
+    output_json = "./output/sample.json"
     os.makedirs(os.path.dirname(output_json), exist_ok=True)
     generate_outline_json(test_pdf, output_json)
