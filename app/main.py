@@ -1,122 +1,104 @@
+import fitz  # PyMuPDF
 import os
 import json
-import fitz  # PyMuPDF
 import re
+from collections import Counter
 
-INPUT_DIR = "/app/input"
-OUTPUT_DIR = "/app/output"
+# ---------- Helper Functions ----------
 
-def is_junk(text):
-    junk_keywords = ['copyright', 'isbn', 'www.', 'http', 'harpercollins', 'oceanofpdf', 'all rights reserved']
-    return any(kw.lower() in text.lower() for kw in junk_keywords)
-
-def is_title_case(text):
-    if text.isupper():
-        return True
-    words = text.split()
-    if not words:
+def is_valid_heading(text):
+    text = text.strip()
+    if not text:
         return False
-    capitalized = [w[0].isupper() for w in words if w[0].isalpha()]
-    return sum(capitalized) >= len(words) * 0.8
+    if len(text.split()) <= 1:
+        return False
+    if re.search(r'https?://|www\.', text):
+        return False
+    if any(word.lower() in text.lower() for word in ["copyright", "isbn", "@", "harpercollins", "oceanofpdf"]):
+        return False
+    return True
 
-def extract_blocks_from_pdf(pdf_path):
+# ---------- Step 1: Extract Font Info from PDF ----------
+
+def extract_font_data(pdf_path):
     doc = fitz.open(pdf_path)
-    blocks = []
-
+    lines = []
     for page_num in range(len(doc)):
         page = doc[page_num]
-        blocks_on_page = page.get_text("dict")["blocks"]
+        blocks = page.get_text("dict")['blocks']
+        for b in blocks:
+            if 'lines' in b:
+                for l in b['lines']:
+                    for span in l['spans']:
+                        if not is_valid_heading(span['text']):
+                            continue
+                        line = {
+                            'text': span['text'].strip(),
+                            'size': span['size'],
+                            'bold': 'bold' in span['font'].lower(),
+                            'font': span['font'],
+                            'page': page_num + 1
+                        }
+                        lines.append(line)
+    doc.close()
+    return lines
 
-        for block in blocks_on_page:
-            if "lines" in block:
-                for line in block["lines"]:
-                    line_text = ""
-                    font_sizes = []
-                    is_bold = False
+# ---------- Step 2: Determine Top Font Sizes ----------
 
-                    for span in line["spans"]:
-                        line_text += span["text"]
-                        font_sizes.append(span["size"])
-                        if "bold" in span["font"].lower():
-                            is_bold = True
+def get_top_font_sizes(lines, top_n=3):
+    size_counts = Counter(line['size'] for line in lines)
+    top_sizes = [s for s, _ in size_counts.most_common(top_n)]
+    return sorted(top_sizes, reverse=True)  # descending order
 
-                    if line_text.strip():
-                        avg_font_size = sum(font_sizes) / len(font_sizes)
-                        blocks.append({
-                            "text": line_text.strip(),
-                            "size": avg_font_size,
-                            "bold": is_bold,
-                            "page": page_num + 1
-                        })
-    return blocks
+# ---------- Step 3: Assign Levels to Headings ----------
 
-def classify_headings(blocks):
-    headings = []
+def assign_heading_levels(lines, top_sizes):
+    outline = []
+    for line in lines:
+        if line['size'] in top_sizes:
+            level_index = top_sizes.index(line['size'])
+            level = f"H{level_index + 1}"
+            outline.append({
+                "level": level,
+                "text": line['text'],
+                "page": line['page']
+            })
+    return outline
 
-    for block in blocks:
-        text = block["text"].strip()
-        if not text or is_junk(text):
-            continue
-        if len(text.split()) > 10:
-            continue
-        if any(p in text for p in [".", ",", "?", "\"", "”", "“", "'"]):
-            continue
-        if not is_title_case(text):
-            continue
-        if re.match(r"^\d+$", text):
-            continue
+# ---------- Step 4: Detect Title ----------
 
-        size = block["size"]
-        page = block["page"]
-
-        if size >= 17:
-            level = "H1"
-        elif size >= 15:
-            level = "H2"
-        elif size >= 13:
-            level = "H3"
-        else:
-            continue
-
-        headings.append({
-            "level": level,
-            "text": text,
-            "page": page
-        })
-
-    return headings
-
-def extract_title(blocks):
-    filtered = [b for b in blocks if not is_junk(b["text"]) and len(b["text"].split()) <= 10]
-    if not filtered:
+def detect_title(lines):
+    candidates = [line for line in lines if line['bold'] and len(line['text']) > 4 and line['page'] <= 2]
+    if not candidates:
         return "Untitled"
-    top = max(filtered, key=lambda b: b["size"])
-    return top["text"]
+    sorted_by_size = sorted(candidates, key=lambda x: x['size'], reverse=True)
+    for line in sorted_by_size:
+        if is_valid_heading(line['text']):
+            return line['text']
+    return "Untitled"
 
-def process_pdf(pdf_path, output_path):
-    blocks = extract_blocks_from_pdf(pdf_path)
-    headings = classify_headings(blocks)
-    title = extract_title(blocks)
+# ---------- Step 5: Generate JSON ----------
 
-    output = {
+def generate_outline_json(pdf_path, output_path):
+    lines = extract_font_data(pdf_path)
+    top_sizes = get_top_font_sizes(lines, top_n=3)
+    outline = assign_heading_levels(lines, top_sizes)
+    title = detect_title(lines)
+
+    data = {
         "title": title,
-        "outline": headings
+        "outline": outline
     }
 
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2, ensure_ascii=False)
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    print(f"✅ JSON saved to: {output_path}")
 
-    print(f"✅ Processed: {os.path.basename(pdf_path)}")
-
-def main():
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-    for filename in os.listdir(INPUT_DIR):
-        if filename.lower().endswith(".pdf"):
-            pdf_path = os.path.join(INPUT_DIR, filename)
-            output_filename = os.path.splitext(filename)[0] + ".json"
-            output_path = os.path.join(OUTPUT_DIR, output_filename)
-            process_pdf(pdf_path, output_path)
+# ---------- Step 6: Run Locally or in Colab ----------
 
 if __name__ == "__main__":
-    main()
+    # Example usage — replace with any PDF path
+    test_pdf = "/content/file01.pdf"  # Replace with uploaded file path
+    output_json = "/content/output/file01.json"
+    os.makedirs(os.path.dirname(output_json), exist_ok=True)
+    generate_outline_json(test_pdf, output_json)
