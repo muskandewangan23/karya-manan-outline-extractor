@@ -1,17 +1,23 @@
-# Specify the platform to ensure amd64 compatibility
+# Ensure AMD64 compatibility
 FROM --platform=linux/amd64 python:3.10-slim
 
-# Set working directory inside container
+# Avoid buffering issues with print statements
+ENV PYTHONUNBUFFERED=1
+
+# Work in /app
 WORKDIR /app
 
-# Copy application code and dependencies
-COPY app /app
+# Copy requirements first (for caching)
+COPY app/requirements.txt .
 
 # Install dependencies
-RUN pip install --no-cache-dir pymupdf
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Create input and output directories inside container
-RUN mkdir -p /app/input /app/output
+# Copy app contents
+COPY app/ /app/
 
-# Set entrypoint to run the processing script automatically
-ENTRYPOINT ["python", "main.py"]
+# Create input/output dirs if missing
+RUN mkdir -p input output
+
+# Run your script
+CMD ["python", "main.py"]
